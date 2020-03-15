@@ -27,7 +27,7 @@ class Handshake:
         self.hash_val = self.dport if self.sport == '443' else self.sport
         self.previous_state = None
         self.current_state = None
-        self.matrix = [[0]*14]*14
+        self.matrix = [[0 for x in range(14)] for y in range(14)]
         self.counter = 0
 
 # 0- hello request  1 - client hello   2- server hello   3-certificate
@@ -35,44 +35,66 @@ class Handshake:
 # 9-finish   10-Change Cipher spec   11- Application Data    12- Alert
 # 13- New session ticket
 
+table= {'22.0': 0, '22.1': 1, '22.2': 2, '22.11': 3, '22.12':4, '22.13':5, '22.14': 6,
+        '22.15': 7, '22.16' : 8, '22.20': 9, '20': 10, '23' : 11, '21': 12, '22.4': 13}
 count = 0
 
 for packet in f:
     count += 1
     if packet.haslayer(SSL):
         handshake_packet = Handshake(packet)
-        # if handshake_packet.sport not in list(ports.keys()):
-        #     ports[handshake_packet.sport] = 1
-        # else:
-        #     ports[handshake_packet.sport] += 1
         if handshake_packet.hash_val in list(dict_of_handshakes.keys()):
             handshake_packet.previous_state = dict_of_handshakes[handshake_packet.hash_val].previous_state
-        # else:
-        #     dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+            handshake_packet.matrix = deepcopy(dict_of_handshakes[handshake_packet.hash_val].matrix)
+        else:
+            dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
         handshake_packet.counter += 1
         for record in packet.records:
-            if record.content_type == 22:  # handshake protocol
-                if not record.haslayer(TLSCiphertext) and record[TLSHandshake].type != 22: # not Certificate Status
-                    handshake_packet.current_state = matrix_handshake_table[record[TLSHandshake].type]
-                    #print(handshake_packet.current_state)
-            elif record.content_type == 20:  # change cipher spec
-                handshake_packet.current_state = 10
-            elif record.content_type == 21:  # alert
-                handshake_packet.current_state = 12
-            elif record.content_type == 23:  # data
-                handshake_packet.current_state = 11
-            if handshake_packet.previous_state is not None:
-                #print(handshake_packet.current_state)
-                #print(count)
-                #handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+            if record.content_type in [20,21,22,23]:
+                if record.content_type == 22:  # handshake protocol
+                    if not record.haslayer(TLSCiphertext) and record[TLSHandshake].type != 22 and record[TLSHandshake].type != 0: # not Certificate Status and encrypted handshake message
+                        #handshake_packet.current_state = matrix_handshake_table[record[TLSHandshake].type]
+                        val = str(record.content_type)+'.'+str(record[TLSHandshake].type)
+                        handshake_packet.current_state = table[str(record.content_type)+'.'+str(record[TLSHandshake].type)]
+                elif record.content_type == 20:  # change cipher spec
+                    val = str(record.content_type)
+                    handshake_packet.current_state = table[str(record.content_type)]
+                elif record.content_type == 21:  # alert
+                    val = str(record.content_type)
+                    handshake_packet.current_state = table[str(record.content_type)]
+                elif record.content_type == 23:  # data
+                    val = str(record.content_type)
+                    handshake_packet.current_state = table[str(record.content_type)]
+                #print('count', count, 'previous: ', handshake_packet.previous_state, ' current: ', handshake_packet.current_state, ' val: ', val)
                 if handshake_packet.current_state is not None:
-                    handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
-                else:
-                    pass
-            else:
-                handshake_packet.matrix[0][0] += 1
-            handshake_packet.previous_state = handshake_packet.current_state
-            dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+                    if handshake_packet.previous_state is None:
+                        handshake_packet.matrix[0][0] += 1
+                    else:
+                        #print('pval: ', handshake_packet.previous_state, ' cval: ', val, 'm[i][j]: ', handshake_packet.matrix[handshake_packet.previous_state][handshake_packet.current_state])
+                        handshake_packet.matrix[handshake_packet.previous_state][handshake_packet.current_state] += 1
+                    handshake_packet.previous_state = handshake_packet.current_state
+                    dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+
+            # if handshake_packet.previous_state is not None:
+            #     if handshake_packet.current_state is not None:
+            #         handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+            #     else:
+            #         continue
+            # else:
+            #     handshake_packet.matrix[0][0] += 1
+            # handshake_packet.previous_state = handshake_packet.current_state
+            # dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+            # if handshake_packet.previous_state is None and record[TLSHandshake].type == 1:
+            #     handshake_packet.matrix[0][0] += 1
+            #     handshake_packet.previous_state = handshake_packet.current_state
+            #     dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+            # else:
+            #     if handshake_packet.current_state is not None:
+            #         handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+            #     else:
+            #         continue
+            # handshake_packet.previous_state = handshake_packet.current_state
+            # dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
 
 
 def normalize(handshake_packet):
@@ -81,7 +103,8 @@ def normalize(handshake_packet):
         for j in range(14):
             c += handshake_packet.matrix[i][j]
         for j in range(14):
-            handshake_packet.matrix[i][j] = round(handshake_packet.matrix[i][j]/c, 2)
+            if c!=0:
+                handshake_packet.matrix[i][j] = round(handshake_packet.matrix[i][j]/c, 2)
             #print(handshake_packet.matrix[i][j])
 
 
@@ -96,7 +119,6 @@ dot_matrix = {1: 'A', 2 : 'B', 3: 'C', 4 : 'D', 5 : 'E', 6 : 'F', 7 : 'G', 8: 'H
 def draw_dot(handshake_packet):
     file = handshake_packet.src + '-' + handshake_packet.sport \
            + '-' + handshake_packet.dst + '-' + handshake_packet.dport
-    file = 'temp'
     dot = Digraph(comment='', filename=file)
     dot.node('A', '22.0')
     dot.node('B', '22.1')
@@ -119,14 +141,14 @@ def draw_dot(handshake_packet):
                 lbl = str(handshake_packet.matrix[i][j] * 100) + '%'
                 dot.edge(dot_matrix[i+1], dot_matrix[j+1], label=lbl)
     # print(dot.source)
-    dot.view()
-    # dot.render('test-output/l.gv', view=True)
+    #dot.view()
+    dot.render('test-output/' + file + '.gv')
 
 
 for i in list(dict_of_handshakes.keys()):
-    print(dict_of_handshakes[i].matrix)
+    #print(dict_of_handshakes[i].matrix)
     normalize(dict_of_handshakes[i])
-    print(dict_of_handshakes[i])
+    #print(dict_of_handshakes[i].matrix)
     draw_dot(dict_of_handshakes[i])
 
 #draw_dot(dict_of_handshakes['45486'])
