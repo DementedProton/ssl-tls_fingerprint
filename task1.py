@@ -1,6 +1,6 @@
 from scapy.all import *
 from graphviz import Digraph
-
+from copy import deepcopy
 
 f = rdpcap('example.pcap')
 
@@ -41,29 +41,36 @@ for packet in f:
     count += 1
     if packet.haslayer(SSL):
         handshake_packet = Handshake(packet)
-        if handshake_packet.sport not in list(ports.keys()):
-            ports[handshake_packet.sport] = 1
-        else:
-            ports[handshake_packet.sport] += 1
+        # if handshake_packet.sport not in list(ports.keys()):
+        #     ports[handshake_packet.sport] = 1
+        # else:
+        #     ports[handshake_packet.sport] += 1
         if handshake_packet.hash_val in list(dict_of_handshakes.keys()):
-            handshake_packet = dict_of_handshakes[handshake_packet.hash_val]
-        else:
-            dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
+            handshake_packet.previous_state = dict_of_handshakes[handshake_packet.hash_val].previous_state
+        # else:
+        #     dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
         handshake_packet.counter += 1
         for record in packet.records:
-            if record.content_type == 22: # handshake protocol
-                if not record.haslayer(TLSCiphertext) and record[TLSHandshake].type != 22 and record[TLSHandshake].type != 4: # not Certificate Status
+            if record.content_type == 22:  # handshake protocol
+                if not record.haslayer(TLSCiphertext) and record[TLSHandshake].type != 22: # not Certificate Status
                     handshake_packet.current_state = matrix_handshake_table[record[TLSHandshake].type]
-            elif record.content_type == 20: # change cipher spec
+                    #print(handshake_packet.current_state)
+            elif record.content_type == 20:  # change cipher spec
                 handshake_packet.current_state = 10
-            elif record.content_type == 21: # alert
+            elif record.content_type == 21:  # alert
                 handshake_packet.current_state = 12
-            elif record.content_type == 23: # data
+            elif record.content_type == 23:  # data
                 handshake_packet.current_state = 11
             if handshake_packet.previous_state is not None:
-                handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+                #print(handshake_packet.current_state)
+                #print(count)
+                #handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+                if handshake_packet.current_state is not None:
+                    handshake_packet.matrix[handshake_packet.current_state][handshake_packet.previous_state] += 1
+                else:
+                    pass
             else:
-                handshake_packet.matrix[handshake_packet.current_state][0] += 1
+                handshake_packet.matrix[0][0] += 1
             handshake_packet.previous_state = handshake_packet.current_state
             dict_of_handshakes[handshake_packet.hash_val] = handshake_packet
 
@@ -75,7 +82,7 @@ def normalize(handshake_packet):
             c += handshake_packet.matrix[i][j]
         for j in range(14):
             handshake_packet.matrix[i][j] = round(handshake_packet.matrix[i][j]/c, 2)
-            print(handshake_packet.matrix[i][j])
+            #print(handshake_packet.matrix[i][j])
 
 
 # 0- hello request  1 - client hello   2- server hello   3-certificate
@@ -83,8 +90,8 @@ def normalize(handshake_packet):
 # 9-finish   10-Change Cipher spec   11- Application Data    12- Alert
 # 13- New session ticket
 
-dot_matrix = {1: 'A', 2 : 'B', 3: 'C', 4 : 'D', 5 : 'E', 6 : 'F', 7 : 'G', 8:'H',
-              9:'I', 10: 'J', 11: 'K', 12: 'L', 13: 'M', 14: 'O'}
+dot_matrix = {1: 'A', 2 : 'B', 3: 'C', 4 : 'D', 5 : 'E', 6 : 'F', 7 : 'G', 8: 'H',
+              9: 'I', 10: 'J', 11: 'K', 12: 'L', 13: 'M', 14: 'O'}
 
 def draw_dot(handshake_packet):
     file = handshake_packet.src + '-' + handshake_packet.sport \
@@ -107,13 +114,13 @@ def draw_dot(handshake_packet):
     dot.node('O', '22.4')
     for i in range(14):
         for j in range(14):
-            if handshake_packet.matrix[i][j] > 0.05:
-                print(handshake_packet.matrix[i][j])
-                lbl=str(handshake_packet.matrix[i][j])
-                dot.edge(dot_matrix[j+1], dot_matrix[i+1], label=lbl)
-    print(dot.source)
+            if handshake_packet.matrix[i][j] > 0:
+                # print(handshake_packet.matrix[i][j])
+                lbl = str(handshake_packet.matrix[i][j] * 100) + '%'
+                dot.edge(dot_matrix[i+1], dot_matrix[j+1], label=lbl)
+    # print(dot.source)
     dot.view()
-    #dot.render('test-output/l.gv', view=True)
+    # dot.render('test-output/l.gv', view=True)
 
 
 for i in list(dict_of_handshakes.keys()):
