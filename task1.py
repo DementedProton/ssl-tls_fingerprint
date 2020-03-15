@@ -2,7 +2,7 @@ from scapy.all import *
 from graphviz import Digraph
 from copy import deepcopy
 
-f = rdpcap('example.pcap')
+f = rdpcap('handshake_packets.pcap')
 
 dict_of_handshakes = {}
 
@@ -105,7 +105,6 @@ def normalize(handshake_packet):
         for j in range(14):
             if c!=0:
                 handshake_packet.matrix[i][j] = round(handshake_packet.matrix[i][j]/c, 2)
-            #print(handshake_packet.matrix[i][j])
 
 
 # 0- hello request  1 - client hello   2- server hello   3-certificate
@@ -116,11 +115,12 @@ def normalize(handshake_packet):
 dot_matrix = {1: 'A', 2 : 'B', 3: 'C', 4 : 'D', 5 : 'E', 6 : 'F', 7 : 'G', 8: 'H',
               9: 'I', 10: 'J', 11: 'K', 12: 'L', 13: 'M', 14: 'O'}
 
+
 def draw_dot(handshake_packet):
     file = handshake_packet.src + '-' + handshake_packet.sport \
            + '-' + handshake_packet.dst + '-' + handshake_packet.dport
     dot = Digraph(comment='', filename=file)
-    dot.node('A', '22.0')
+    dot.node('A', 'Start')
     dot.node('B', '22.1')
     dot.node('C', '22.2')
     dot.node('D', '22.11')
@@ -134,12 +134,14 @@ def draw_dot(handshake_packet):
     dot.node('L', '21')
     dot.node('M', '23')
     dot.node('O', '22.4')
+    dot.edge('A', 'B')
     for i in range(14):
         for j in range(14):
             if handshake_packet.matrix[i][j] > 0:
                 # print(handshake_packet.matrix[i][j])
                 lbl = str(handshake_packet.matrix[i][j] * 100) + '%'
-                dot.edge(dot_matrix[i+1], dot_matrix[j+1], label=lbl)
+                if dot_matrix[i+1] != dot_matrix[j+1]:
+                    dot.edge(dot_matrix[i+1], dot_matrix[j+1], label=lbl)
     # print(dot.source)
     #dot.view()
     dot.render('test-output/' + file + '.gv')
@@ -153,3 +155,5 @@ for i in list(dict_of_handshakes.keys()):
 
 #draw_dot(dict_of_handshakes['45486'])
 #dot.render('test-output/round-table.gv', view=True)
+
+
